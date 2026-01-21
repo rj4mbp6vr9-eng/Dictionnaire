@@ -1,505 +1,56 @@
-<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Vocab</title>
-  <style>
-    :root{--line:#eaeaea;--txt:#111;--mut:#666}
-    *{box-sizing:border-box}
-    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--txt)}
-    header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
-    nav{display:flex;gap:8px;flex-wrap:wrap}
-    .tab{border:1px solid var(--line);background:#fff;padding:8px 10px;border-radius:10px;cursor:pointer}
-    .tab.active{border-color:var(--txt)}
-    main{max-width:900px;margin:0 auto;padding:16px}
-    .card{border:1px solid var(--line);border-radius:14px;padding:14px}
-    input,textarea,button{font:inherit}
-    input,textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none}
-    textarea{min-height:90px;resize:vertical}
-    .row{display:grid;grid-template-columns:1fr 1.4fr;gap:10px}
-    @media(max-width:720px){.row{grid-template-columns:1fr}}
-    .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-    .btn{border:1px solid var(--txt);background:var(--txt);color:#fff;padding:9px 12px;border-radius:12px;cursor:pointer}
-    .btn.alt{border:1px solid var(--line);background:#f4f4f4;color:var(--txt)}
-    .btn:disabled{opacity:.5;cursor:not-allowed}
-    .small{font-size:13px;color:var(--mut)}
-    .list{margin-top:14px;border-top:1px solid var(--line)}
-    .item{padding:12px 0;border-bottom:1px solid var(--line);display:grid;grid-template-columns:1fr auto;gap:10px}
-    .word{font-weight:700}
-    .def{color:var(--mut);margin-top:4px;white-space:pre-wrap}
-    .quizTop{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
-    .pill{border:1px solid var(--line);border-radius:999px;padding:6px 10px;font-size:13px;color:var(--mut)}
-    .quizWord{font-size:clamp(28px,4vw,44px);font-weight:800;text-align:center;margin:10px 0 4px}
-    .center{text-align:center}
-    .quizDef{display:none;border-top:1px solid var(--line);padding-top:12px;margin-top:6px;color:var(--mut);white-space:pre-wrap}
-    .stats{margin-top:14px;border-top:1px solid var(--line);padding-top:14px;display:grid;gap:10px}
-    .statsGrid{display:grid;grid-template-columns:repeat(4, minmax(0,1fr));gap:10px}
-    @media(max-width:720px){.statsGrid{grid-template-columns:repeat(2, minmax(0,1fr));}}
-    .statBox{border:1px solid var(--line);border-radius:14px;padding:12px}
-    .statVal{font-weight:800;font-size:22px;line-height:1.1}
-    .statLbl{font-size:13px;color:var(--mut);margin-top:6px}
-    .notice{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:12px}
-  </style>
-</head>
-<body>
-<header>
-  <div style="font-weight:700;">Vocab</div>
-  <nav>
-    <button class="tab active" id="tab1" type="button">Menu 1 — Mots</button>
-    <button class="tab" id="tab2" type="button">Menu 2 — Aléatoire</button>
-    <button class="tab" id="tab3" type="button">Menu 3 — Non <span id="nvBadge" class="small"></span></button>
-  </nav>
-</header>
+if (action === "answerAndSetNon") {
+  // { id, menu:2|3, result:"ok"|"no", setNon:true|false (optionnel) }
+  const id = String(body.id||"").trim();
+  const menu = Number(body.menu||0);
+  const result = String(body.result||"");
+  const hasSetNon = Object.prototype.hasOwnProperty.call(body, "setNon");
+  const setNon = hasSetNon ? !!body.setNon : null;
 
-<main>
-  <section class="card" id="view1">
-    <div class="notice small" id="syncInfo">Connexion…</div>
+  if(!id) return json({ok:false, error:"id_required"});
+  if(menu!==2 && menu!==3) return json({ok:false, error:"menu_invalid"});
+  if(result!=="ok" && result!=="no") return json({ok:false, error:"result_invalid"});
 
-    <div style="margin-bottom:12px;">
-      <div class="small">Rechercher</div>
-      <input id="searchInput" placeholder="Tape un mot ou un bout de définition…" />
-    </div>
+  const dict = ensureDictSheet_();
+  const statsSh = ensureStatsSheet_();
+  const dvals = dict.getDataRange().getValues();
+  const idx = dictIndex_(dvals);
 
-    <div class="row">
-      <div>
-        <div class="small">Mot</div>
-        <input id="wordInput" placeholder="ex : persévérance" />
-      </div>
-      <div>
-        <div class="small">Définition</div>
-        <textarea id="defInput" placeholder="Écris la définition ici…"></textarea>
-      </div>
-    </div>
-
-    <div class="actions">
-      <button class="btn" id="addBtn" type="button">Ajouter / Modifier</button>
-      <button class="btn alt" id="refreshBtn" type="button">Rafraîchir</button>
-      <button class="btn alt" id="resetStatsBtn" type="button">Réinitialiser stats</button>
-      <button class="btn alt" id="clearNonBtn" type="button">Vider “Non”</button>
-      <span class="small" id="countInfo"></span>
-    </div>
-
-    <div class="list" id="list"></div>
-
-    <div class="stats">
-      <div class="small" style="font-weight:650;color:#111;">Statistiques</div>
-
-      <div class="statsGrid">
-        <div class="statBox"><div class="statVal" id="stTotalWords">0</div><div class="statLbl">Mots au total</div></div>
-        <div class="statBox"><div class="statVal" id="stNV">0</div><div class="statLbl">En “Non”</div></div>
-        <div class="statBox"><div class="statVal" id="stMastered">0</div><div class="statLbl">Maîtrisés</div></div>
-        <div class="statBox"><div class="statVal" id="stMasteryRate">0%</div><div class="statLbl">Taux de maîtrise</div></div>
-      </div>
-
-      <div class="statsGrid">
-        <div class="statBox"><div class="statVal" id="stAllAcc">0%</div><div class="statLbl">Précision globale</div></div>
-        <div class="statBox"><div class="statVal" id="stAllAttempts">0</div><div class="statLbl">Réponses (total)</div></div>
-        <div class="statBox"><div class="statVal" id="stM2Acc">0%</div><div class="statLbl">Précision Menu 2</div></div>
-        <div class="statBox"><div class="statVal" id="stM3Acc">0%</div><div class="statLbl">Précision Menu 3</div></div>
-      </div>
-
-      <div class="small" id="statsNote"></div>
-    </div>
-  </section>
-
-  <section class="card" id="view2" style="display:none;">
-    <div class="quizTop">
-      <div class="pill" id="progress2">0 / 0</div>
-      <div class="pill" id="pillM2">Menu 2 — Oui: 0 | Non: 0</div>
-    </div>
-
-    <div class="quizWord" id="quizWord2">Chargement…</div>
-    <div class="center small" id="quizHint2"></div>
-    <div class="quizDef" id="quizDef2"></div>
-
-    <div class="actions" style="justify-content:center;">
-      <button class="btn" id="okBtn2" type="button" disabled>Oui</button>
-      <button class="btn alt" id="noBtn2" type="button" disabled>Non</button>
-      <button class="btn" id="nextBtn2" type="button" style="display:none;">Suivant</button>
-    </div>
-
-    <div class="actions" style="justify-content:space-between;">
-      <button class="btn alt" id="restartBtn2" type="button">Recommencer</button>
-      <button class="btn alt" id="backBtn2" type="button">Retour Menu 1</button>
-    </div>
-  </section>
-
-  <section class="card" id="view3" style="display:none;">
-    <div class="quizTop">
-      <div class="pill" id="progress3">0 / 0</div>
-      <div class="pill" id="pillM3">Menu 3 — Oui: 0 | Non: 0</div>
-    </div>
-
-    <div class="quizWord" id="quizWord3">Chargement…</div>
-    <div class="center small" id="quizHint3"></div>
-    <div class="quizDef" id="quizDef3"></div>
-
-    <div class="actions" style="justify-content:center;">
-      <button class="btn" id="okBtn3" type="button" disabled>Oui</button>
-      <button class="btn alt" id="noBtn3" type="button" disabled>Non</button>
-      <button class="btn" id="nextBtn3" type="button" style="display:none;">Suivant</button>
-    </div>
-
-    <div class="actions" style="justify-content:space-between;">
-      <button class="btn alt" id="restartBtn3" type="button">Recommencer</button>
-      <button class="btn alt" id="backBtn3" type="button">Retour Menu 1</button>
-    </div>
-  </section>
-</main>
-
-<script>
-  // ✅ URL /exec (sans ?token=)
-  const API_URL = "https://script.google.com/macros/s/AKfycbzyNxt_jhuYopOxnjiiGMGx8zA3CPHA9g_8aXu-tTz6KGcPa4bSoBy2bQaeSxqhvk0BMA/exec";
-  const TOKEN = "Token974";
-
-  let words = [];
-  let stats = {all_ok:0, all_no:0, m2_ok:0, m2_no:0, m3_ok:0, m3_no:0, createdAt:""};
-
-  const tab1=el("tab1"), tab2=el("tab2"), tab3=el("tab3"), nvBadge=el("nvBadge");
-  const view1=el("view1"), view2=el("view2"), view3=el("view3");
-  const syncInfo=el("syncInfo");
-  const searchInput=el("searchInput"), wordInput=el("wordInput"), defInput=el("defInput");
-  const addBtn=el("addBtn"), refreshBtn=el("refreshBtn"), resetStatsBtn=el("resetStatsBtn"), clearNonBtn=el("clearNonBtn");
-  const listEl=el("list"), countInfo=el("countInfo");
-
-  const progress2=el("progress2"), pillM2=el("pillM2"), quizWord2=el("quizWord2"), quizHint2=el("quizHint2"), quizDef2=el("quizDef2");
-  const okBtn2=el("okBtn2"), noBtn2=el("noBtn2"), nextBtn2=el("nextBtn2"), restartBtn2=el("restartBtn2"), backBtn2=el("backBtn2");
-
-  const progress3=el("progress3"), pillM3=el("pillM3"), quizWord3=el("quizWord3"), quizHint3=el("quizHint3"), quizDef3=el("quizDef3");
-  const okBtn3=el("okBtn3"), noBtn3=el("noBtn3"), nextBtn3=el("nextBtn3"), restartBtn3=el("restartBtn3"), backBtn3=el("backBtn3");
-
-  const stTotalWords=el("stTotalWords"), stNV=el("stNV"), stMastered=el("stMastered"), stMasteryRate=el("stMasteryRate");
-  const stAllAcc=el("stAllAcc"), stAllAttempts=el("stAllAttempts"), stM2Acc=el("stM2Acc"), stM3Acc=el("stM3Acc"), statsNote=el("statsNote");
-
-  function el(id){ return document.getElementById(id); }
-
-  function switchTo(menu){
-    view1.style.display = menu===1 ? "" : "none";
-    view2.style.display = menu===2 ? "" : "none";
-    view3.style.display = menu===3 ? "" : "none";
-    tab1.classList.toggle("active", menu===1);
-    tab2.classList.toggle("active", menu===2);
-    tab3.classList.toggle("active", menu===3);
-    if(menu===2) startQuizAll();
-    if(menu===3) startQuizNon();
-  }
-  tab1.onclick=()=>switchTo(1);
-  tab2.onclick=()=>switchTo(2);
-  tab3.onclick=()=>switchTo(3);
-  backBtn2.onclick=()=>switchTo(1);
-  backBtn3.onclick=()=>switchTo(1);
-
-  async function apiGetAll(){
-    const res = await fetch(`${API_URL}?token=${encodeURIComponent(TOKEN)}`, {cache:"no-store"});
-    const data = await res.json();
-    if(!data.ok) throw new Error(data.error || "api_error");
-    words = (data.items||[]).map(x=>({
-      id:String(x.id),
-      word:String(x.mot||""),
-      def:String(x.definition||""),
-      isNon: !!x.isNon,
-      okCount: Number(x.okCount||0),
-      noCount: Number(x.noCount||0),
-    }));
-    stats = data.stats || stats;
+  function findRowById_(id){
+    for(let r=1;r<dvals.length;r++){
+      if(String(dvals[r][idx.id])===String(id)) return r+1;
+    }
+    return -1;
   }
 
-async function apiPost(payload){
-  const res = await fetch(`${API_URL}?token=${encodeURIComponent(TOKEN)}`, {
-    method: "POST",
-    // IMPORTANT: text/plain évite le preflight CORS
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(payload),
-  });
+  function updateStats_(patch){
+    const row = 2;
+    const colMap = {all_ok:2, all_no:3, m2_ok:4, m2_no:5, m3_ok:6, m3_no:7};
+    Object.keys(patch).forEach(k=>{
+      const col = colMap[k];
+      if(!col) return;
+      const cur = Number(statsSh.getRange(row,col).getValue()||0);
+      statsSh.getRange(row,col).setValue(cur + Number(patch[k]||0));
+    });
+  }
 
-  const text = await res.text();
-  let data;
-  try { data = JSON.parse(text); }
-  catch { throw new Error("Réponse non-JSON: " + text.slice(0,200)); }
+  const row = findRowById_(id);
+  if(row === -1) return json({ok:false, error:"not_found"});
 
-  if(!data.ok) throw new Error(data.error || "api_error");
-  return data;
+  if(result==="ok"){
+    const cur = Number(dict.getRange(row, idx.okCount+1).getValue()||0);
+    dict.getRange(row, idx.okCount+1).setValue(cur+1);
+    updateStats_({all_ok:1, ...(menu===2?{m2_ok:1}:{m3_ok:1})});
+  } else {
+    const cur = Number(dict.getRange(row, idx.noCount+1).getValue()||0);
+    dict.getRange(row, idx.noCount+1).setValue(cur+1);
+    updateStats_({all_no:1, ...(menu===2?{m2_no:1}:{m3_no:1})});
+  }
+
+  if(setNon !== null){
+    dict.getRange(row, idx.isNon+1).setValue(setNon);
+  }
+
+  dict.getRange(row, idx.updatedAt+1).setValue(new Date().toISOString());
+
+  return json({ok:true});
 }
-
-
-  function shuffle(a){
-    for(let i=a.length-1;i>0;i--){
-      const j=Math.floor(Math.random()*(i+1));
-      [a[i],a[j]]=[a[j],a[i]];
-    }
-    return a;
-  }
-  function pct(ok,total){ return total<=0 ? 0 : Math.round((ok/total)*100); }
-  function byId(id){ return words.find(w=>w.id===id) || null; }
-  function nonCount(){ return words.filter(w=>w.isNon).length; }
-
-  function renderList(){
-    const q = searchInput.value.trim().toLowerCase();
-    listEl.innerHTML="";
-
-    const filtered = words.filter(it=>{
-      if(!q) return true;
-      return it.word.toLowerCase().includes(q) || it.def.toLowerCase().includes(q);
-    });
-
-    countInfo.textContent = `${filtered.length} / ${words.length} mot(s)`;
-
-    if(!filtered.length){
-      const d=document.createElement("div");
-      d.className="small";
-      d.style.padding="12px 0";
-      d.textContent = q ? "Aucun résultat." : "Ajoute un mot et sa définition ci-dessus.";
-      listEl.appendChild(d);
-      return;
-    }
-
-    filtered.forEach((it)=>{
-      const row=document.createElement("div");
-      row.className="item";
-
-      const left=document.createElement("div");
-      const w=document.createElement("div");
-      w.className="word";
-      w.textContent = it.word + (it.isNon ? "  • Non" : "");
-
-      const def=document.createElement("div");
-      def.className="def";
-      def.textContent = it.def || "(pas de définition)";
-      left.append(w,def);
-
-      const right=document.createElement("div");
-      right.className="actions";
-      right.style.marginTop="0";
-
-      const edit=document.createElement("button");
-      edit.className="btn alt";
-      edit.textContent="Modifier";
-      edit.onclick=()=>{
-        wordInput.value=it.word;
-        defInput.value=it.def;
-        wordInput.dataset.keepId=it.id;
-        wordInput.focus();
-      };
-
-      const toggleNon=document.createElement("button");
-      toggleNon.className="btn alt";
-      toggleNon.textContent = it.isNon ? "Retirer Non" : "Mettre Non";
-      toggleNon.onclick=async()=>{
-        await apiPost({action:"setNon", id:it.id, isNon: !it.isNon});
-        await refresh();
-      };
-
-      const del=document.createElement("button");
-      del.className="btn alt";
-      del.textContent="Supprimer";
-      del.onclick=async()=>{
-        if(!confirm(`Supprimer "${it.word}" ?`)) return;
-        await apiPost({action:"delete", id:it.id});
-        await refresh();
-      };
-
-      right.append(edit, toggleNon, del);
-      row.append(left,right);
-      listEl.appendChild(row);
-    });
-  }
-  searchInput.oninput=()=>renderList();
-
-  addBtn.onclick = async ()=>{
-    const w = wordInput.value.trim();
-    const d = defInput.value.trim();
-    if(!w){ wordInput.focus(); return; }
-    const id = wordInput.dataset.keepId || undefined;
-
-    await apiPost({action:"upsert", item:{id, mot:w, definition:d}});
-    delete wordInput.dataset.keepId;
-    wordInput.value=""; defInput.value="";
-    await refresh();
-  };
-
-  refreshBtn.onclick = ()=>refresh();
-
-  resetStatsBtn.onclick = async ()=>{
-    if(!confirm("Réinitialiser toutes les stats (globales + par mot) ?")) return;
-    await apiPost({action:"resetStats"});
-    await refresh();
-  };
-
-  clearNonBtn.onclick = async ()=>{
-    if(!confirm("Retirer tous les mots de la liste Non ?")) return;
-    await apiPost({action:"clearNon"});
-    await refresh();
-  };
-
-  function renderStats(){
-    const total = words.length;
-    const nv = nonCount();
-    const mastered = Math.max(0, total - nv);
-    const masteryRate = total ? Math.round((mastered/total)*100) : 0;
-
-    const allAttempts = (stats.all_ok||0) + (stats.all_no||0);
-
-    stTotalWords.textContent = String(total);
-    stNV.textContent = String(nv);
-    stMastered.textContent = String(mastered);
-    stMasteryRate.textContent = masteryRate + "%";
-
-    stAllAttempts.textContent = String(allAttempts);
-    stAllAcc.textContent = pct(stats.all_ok||0, allAttempts) + "%";
-
-    const m2Attempts = (stats.m2_ok||0) + (stats.m2_no||0);
-    const m3Attempts = (stats.m3_ok||0) + (stats.m3_no||0);
-    stM2Acc.textContent = pct(stats.m2_ok||0, m2Attempts) + "%";
-    stM3Acc.textContent = pct(stats.m3_ok||0, m3Attempts) + "%";
-
-    statsNote.textContent = stats.createdAt ? `Stats en ligne depuis : ${new Date(stats.createdAt).toLocaleDateString("fr-FR")}` : "";
-    nvBadge.textContent = nv ? `(${nv})` : "";
-    pillM2.textContent = `Menu 2 — Oui: ${stats.m2_ok||0} | Non: ${stats.m2_no||0}`;
-    pillM3.textContent = `Menu 3 — Oui: ${stats.m3_ok||0} | Non: ${stats.m3_no||0}`;
-  }
-
-  async function refresh(){
-    syncInfo.textContent = "Synchronisation…";
-    try{
-      await apiGetAll();
-      syncInfo.textContent = "Synchronisé ✅ (100% en ligne)";
-      renderList();
-      renderStats();
-    }catch(err){
-      syncInfo.textContent = "Erreur ❌ (déploiement / token / feuilles)";
-      alert("Erreur: " + err.message);
-    }
-  }
-
-  // Quiz Menu 2
-  let orderAll=[], iAll=0;
-  function startQuizAll(){
-    if(!words.length){
-      progress2.textContent="0 / 0";
-      quizWord2.textContent="Ajoute des mots";
-      quizHint2.textContent="Menu 1 → Ajoute tes mots.";
-      quizDef2.style.display="none";
-      okBtn2.disabled=true; noBtn2.disabled=true;
-      nextBtn2.style.display="none";
-      return;
-    }
-    orderAll = shuffle(words.map(w=>w.id));
-    iAll=0;
-    okBtn2.disabled=false; noBtn2.disabled=false;
-    showAll();
-  }
-
-  function showAll(){
-    if(iAll>=orderAll.length){
-      progress2.textContent=`${orderAll.length} / ${orderAll.length}`;
-      quizWord2.textContent="Terminé ✅";
-      quizHint2.textContent="Recommencer pour remélanger.";
-      quizDef2.style.display="none";
-      okBtn2.disabled=true; noBtn2.disabled=true;
-      nextBtn2.style.display="none";
-      return;
-    }
-    const it = byId(orderAll[iAll]);
-    if(!it){ iAll++; return showAll(); }
-    progress2.textContent=`${iAll+1} / ${orderAll.length}`;
-    quizWord2.textContent=it.word;
-    quizDef2.textContent=it.def || "(pas de définition)";
-    quizDef2.style.display="none";
-    quizHint2.textContent="Oui → suivant | Non → définition (et tu peux encore cliquer Oui)";
-    nextBtn2.style.display="none";
-    okBtn2.disabled=false; noBtn2.disabled=false;
-  }
-
-  okBtn2.onclick = async ()=>{
-    const id = orderAll[iAll];
-    await apiPost({action:"answer", id, menu:2, result:"ok"});
-    await apiPost({action:"setNon", id, isNon:false});
-    await refresh();
-    iAll++; showAll();
-  };
-
-  noBtn2.onclick = async ()=>{
-    const id = orderAll[iAll];
-    await apiPost({action:"answer", id, menu:2, result:"no"});
-    await apiPost({action:"setNon", id, isNon:true});
-    await refresh();
-    quizDef2.style.display="block";
-    quizHint2.textContent="Définition affichée. Tu peux répondre Oui maintenant, ou passer au suivant.";
-    okBtn2.disabled=false;
-    noBtn2.disabled=true;
-    nextBtn2.style.display="";
-  };
-
-  nextBtn2.onclick=()=>{ iAll++; showAll(); };
-  restartBtn2.onclick=()=>startQuizAll();
-
-  // Quiz Menu 3
-  let orderNon=[], iNon=0;
-  function startQuizNon(){
-    const ids = words.filter(w=>w.isNon).map(w=>w.id);
-    if(!ids.length){
-      progress3.textContent="0 / 0";
-      quizWord3.textContent="Aucun “Non”";
-      quizHint3.textContent="Les mots marqués Non apparaîtront ici.";
-      quizDef3.style.display="none";
-      okBtn3.disabled=true; noBtn3.disabled=true;
-      nextBtn3.style.display="none";
-      return;
-    }
-    orderNon = shuffle(ids);
-    iNon=0;
-    okBtn3.disabled=false; noBtn3.disabled=false;
-    showNon();
-  }
-
-  function showNon(){
-    const ids = words.filter(w=>w.isNon).map(w=>w.id);
-    if(!ids.length) return startQuizNon();
-
-    if(!orderNon.length || !orderNon.some(id=>byId(id)?.isNon)){
-      orderNon = shuffle(ids);
-      iNon=0;
-    }
-    while(iNon<orderNon.length && !(byId(orderNon[iNon])?.isNon)) iNon++;
-    if(iNon>=orderNon.length){ orderNon = shuffle(ids); iNon=0; }
-
-    const it = byId(orderNon[iNon]);
-    if(!it) { iNon++; return showNon(); }
-
-    progress3.textContent=`${Math.min(iNon+1, orderNon.length)} / ${orderNon.length}`;
-    quizWord3.textContent=it.word;
-    quizDef3.textContent=it.def || "(pas de définition)";
-    quizDef3.style.display="none";
-    quizHint3.textContent="Oui → retire de Non | Non → définition (et tu peux encore cliquer Oui)";
-    nextBtn3.style.display="none";
-    okBtn3.disabled=false; noBtn3.disabled=false;
-  }
-
-  okBtn3.onclick = async ()=>{
-    const id = orderNon[iNon];
-    await apiPost({action:"answer", id, menu:3, result:"ok"});
-    await apiPost({action:"setNon", id, isNon:false});
-    await refresh();
-    showNon();
-  };
-
-  noBtn3.onclick = async ()=>{
-    const id = orderNon[iNon];
-    await apiPost({action:"answer", id, menu:3, result:"no"});
-    await refresh();
-    quizDef3.style.display="block";
-    quizHint3.textContent="Définition affichée. Tu peux répondre Oui maintenant, ou passer au suivant.";
-    okBtn3.disabled=false;
-    noBtn3.disabled=true;
-    nextBtn3.style.display="";
-  };
-
-  nextBtn3.onclick=()=>{ iNon++; showNon(); };
-  restartBtn3.onclick=()=>startQuizNon();
-
-  // Init
-  (async ()=>{ await refresh(); })();
-</script>
-</body>
-</html>
